@@ -1,5 +1,7 @@
 const express = require('express');
-const { Telegraf } = require('telegraf');
+const {
+    Telegraf
+} = require('telegraf');
 require('dotenv').config();
 
 const app = express();
@@ -163,7 +165,7 @@ bot.start(async (ctx) => {
                 }
             }
         });
-        
+
         // Отправляем приветственное сообщение
         await ctx.reply(
             '👋 Привет! Я тестовый бот с WebApp.\n\n' +
@@ -181,7 +183,7 @@ bot.on('web_app_data', async (ctx) => {
     try {
         const data = JSON.parse(ctx.webAppData.data.json);
         console.log('Received data from WebApp:', data);
-        
+
         await ctx.reply(
             '✅ Данные получены из WebApp!\n\n' +
             `Действие: ${data.action}\n` +
@@ -220,27 +222,68 @@ bot.help(async (ctx) => {
     );
 });
 
-// Запуск бота
-(async () => {
-    try {
-        // Запускаем вебхук (для продакшена) или поллинг (для разработки)
-        if (process.env.NODE_ENV === 'production') {
-            const webhookUrl = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook`;
-            await bot.telegram.setWebhook(webhookUrl);
-            app.use(await bot.createWebhook({ domain: process.env.RENDER_EXTERNAL_HOSTNAME }));
-        } else {
-            await bot.launch();
-            console.log('Бот запущен в режиме поллинга');
+// Настройка вебхука
+if (process.env.NODE_ENV === 'production') {
+    // Используем простой маршрут для вебхука
+    app.use(express.json());
+    app.post(`/webhook`, async (req, res) => {
+        try {
+            await bot.handleUpdate(req.body);
+            res.sendStatus(200);
+        } catch (error) {
+            console.error('Error handling update:', error);
+            res.sendStatus(500);
         }
-        
-        app.listen(port, () => {
-            console.log(`Сервер запущен на порту ${port}`);
-            console.log(`WebApp доступен по адресу: http://localhost:${port}/webapp`);
-        });
-    } catch (error) {
-        console.error('Ошибка при запуске бота:', error);
+    });
+
+    // Главная страница для проверки работы
+    app.get('/', (req, res) => {
+        res.send(`
+            <html>
+                <head>
+                    <title>Telegram WebApp Bot</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            max-width: 800px;
+                            margin: 0 auto;
+                            padding: 20px;
+                            text-align: center;
+                        }
+                        .status {
+                            color: green;
+                            font-weight: bold;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>🤖 Telegram WebApp Bot</h1>
+                    <p class="status">✅ Бот работает!</p>
+                    <p>WebApp доступен по адресу: <a href="/webapp">/webapp</a></p>
+                    <p>Вебхук настроен на: /webhook</p>
+                </body>
+            </html>
+        `);
+    });
+} else {
+    // В режиме разработки используем поллинг
+    bot.launch();
+    console.log('Бот запущен в режиме поллинга');
+}
+
+// Запуск сервера
+app.listen(port, () => {
+    console.log(`Сервер запущен на порту ${port}`);
+    console.log(`WebApp доступен по адресу: http://localhost:${port}/webapp`);
+
+    // Настройка вебхука при запуске в production
+    if (process.env.NODE_ENV === 'production') {
+        const webhookUrl = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook`;
+        console.log(`Вебхук будет настроен на: ${webhookUrl}`);
+        console.log('Для настройки вебхука выполните команду:');
+        console.log(`curl -X POST https://api.telegram.org/bot${process.env.BOT_TOKEN}/setWebhook?url=${webhookUrl}`);
     }
-})();
+});
 
 // Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
